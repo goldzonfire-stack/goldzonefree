@@ -93,14 +93,15 @@ async def respond_to_human(event):
         # Inisialisasi memori dengan System Prompt
         system_prompt = f"""{GOLDZONFIRE_CONTEXT}
 Kamu adalah 'AI Leader' (Direktur Operasional AI) dari ekosistem Goldzonfire.
-Tugasmu: KAMU ADALAH MANAJER, BUKAN KONSULTAN. Kamu mengendalikan agen bawahan (Content & Promotion).
-Gaya bahasa: Cerdas, analitis, profesional, tunduk pada Bos. Panggil pengguna 'Bos'.
+Tugasmu: KAMU ADALAH MANAJER. Kamu TIDAK melakukan tugas teknis sendiri. Tugas teknis dikerjakan oleh agen spesialis (Content Agent, Promotion Agent).
+Gaya bahasa: Cerdas, manajerial, profesional, tunduk pada Bos.
 
 INFORMASI PENTING (BACA DENGAN TELITI):
-1. Jika pengguna meminta untuk MEMBUAT KONTEN (misal: "tolong suruh content agent bikin postingan soal psikologi"), JANGAN KAMU YANG MENULIS KONTENNYA SENDIRI! Kamu HARUS menggunakan tool 'request_content_draft'.
-2. Setelah kamu menggunakan 'request_content_draft', tunggu responnya. Draf akan dikirim kembali kepadamu. Kamu harus menunjukkan draf itu ke Bos dan meminta PERSETUJUAN (Approval) sebelum di-posting.
-3. Jika Bos berkata "Setuju", "Bagus, posting", "Lanjut", kamu HARUS memanggil tool 'post_content_now' untuk mem-publish-nya ke channel.
-4. Jika Bos berkata "Jalankan flash sale", gunakan tool 'trigger_flash_sale'."""
+1. DELEGASI: Jika Bos menanyakan harga emas atau berita (news), JANGAN sok tahu! Gunakan tool 'ask_content_agent_for_news' untuk menugaskan Content Agent mencarinya.
+2. DRAFT KONTEN: Jika Bos meminta membuat konten, gunakan tool 'ask_content_agent_for_draft'. Tunggu draf dari Content Agent, lalu tunjukkan ke Bos untuk persetujuan.
+3. EKSEKUSI KONTEN: Jika Bos bilang "Setuju/Posting", gunakan tool 'post_content_now'.
+4. PROMOSI: Jika Bos meminta Flash Sale/Promo, delegasikan ke Promotion Agent menggunakan tool 'delegate_to_promotion_agent'.
+5. AGEN BELUM ADA: Jika Bos meminta tugas yang agennya belum kita miliki (misal: "tolong buatkan desain gambar", "tolong urus komplain customer"), katakan secara jujur: "Maaf Bos, saat ini kita belum memiliki agen khusus untuk menangani urusan [Tugas]. Apakah Bos ingin saya meminta Antigravity untuk membangun agen tersebut?"""
         chat_memory[sender_id] = [{"role": "system", "content": system_prompt}]
         
     user_prompt = event.raw_text
@@ -110,17 +111,17 @@ INFORMASI PENTING (BACA DENGAN TELITI):
     if len(chat_memory[sender_id]) > 11:
         chat_memory[sender_id] = [chat_memory[sender_id][0]] + chat_memory[sender_id][-10:]
     
-    # Tool yang bisa dijalankan AI Leader
+    # Tool yang bisa dijalankan AI Leader (DELEGASI KE AGEN LAIN)
     tools = [
         {
             "type": "function",
             "function": {
-                "name": "trigger_flash_sale",
-                "description": "Eksekusi Flash Promo VIP secara langsung ke Publik Channel.",
+                "name": "delegate_to_promotion_agent",
+                "description": "Menugaskan Promotion Agent untuk mengeksekusi Flash Promo VIP langsung ke Channel.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "alasan": {"type": "string", "description": "Alasan singkat mengapa flash promo ini dijalankan"}
+                        "alasan": {"type": "string", "description": "Alasan singkat mengapa promo ini dijalankan"}
                     },
                     "required": ["alasan"]
                 }
@@ -129,12 +130,12 @@ INFORMASI PENTING (BACA DENGAN TELITI):
         {
             "type": "function",
             "function": {
-                "name": "request_content_draft",
-                "description": "Menyuruh Content Agent membuat draft postingan/edukasi tanpa mempostingnya langsung. Draf akan dikembalikan ke AI Leader untuk di-review bersama bos.",
+                "name": "ask_content_agent_for_draft",
+                "description": "Menugaskan Content Agent membuat draft konten tanpa mempostingnya. Leader akan mereview draf tersebut bersama Bos.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "topik": {"type": "string", "description": "Topik yang ingin dibuat (misal: 'Trading Psychology', 'Market Insight')"}
+                        "topik": {"type": "string", "description": "Topik spesifik (misal: 'Trading Psychology')"}
                     },
                     "required": ["topik"]
                 }
@@ -143,12 +144,24 @@ INFORMASI PENTING (BACA DENGAN TELITI):
         {
             "type": "function",
             "function": {
+                "name": "ask_content_agent_for_news",
+                "description": "Menugaskan Content Agent mencari data harga emas dan berita fundamental (ForexLive) terkini.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "post_content_now",
-                "description": "Mempublish draft konten yang sudah disetujui bos ke Channel Publik.",
+                "description": "Mempublish draft konten yang SUDAH DISETUJUI oleh Bos ke Channel.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "content_text": {"type": "string", "description": "Teks konten lengkap yang akan diposting"}
+                        "content_text": {"type": "string", "description": "Teks draf konten yang disetujui"}
                     },
                     "required": ["content_text"]
                 }
@@ -159,42 +172,58 @@ INFORMASI PENTING (BACA DENGAN TELITI):
     async with leader_client.action(event.chat_id, 'typing'):
         response_msg = generate_chat_with_tools(chat_memory[sender_id], tools=tools)
         
-        # Mengecek apakah AI memutuskan untuk menjalankan Tool (Function Call)
+        # Jika AI menjalankan fungsi delegasi
         if response_msg.tool_calls:
             for tool_call in response_msg.tool_calls:
                 func_name = tool_call.function.name
                 args = json.loads(tool_call.function.arguments)
                 
-                if func_name == "trigger_flash_sale":
-                    alasan = args.get("alasan", "Instruksi dari Bos")
-                    await event.reply(f"🚀 **Menjalankan Perintah:** Flash Promo VIP dieksekusi sekarang juga!\n*Alasan AI:* {alasan}")
+                if func_name == "delegate_to_promotion_agent":
+                    alasan = args.get("alasan", "Perintah Bos")
+                    await event.reply(f"📢 *Mendelegasikan tugas ke Promotion Agent untuk menyebar Flash Promo...*\n(Alasan: {alasan})")
                     
                     if MAIN_CLIENT:
                         await generate_and_post_promo(MAIN_CLIENT, phase="Flash Promo (URGENT)", campaign_name="Flash Promo Kilat", product="VIP Member Goldzonfire", normal_price="Rp1.500.000", promo_price="Rp750.000 (Khusus Hari Ini)", extra_rules="Fokus urgensi super tinggi.")
-                    chat_memory[sender_id].append({"role": "assistant", "content": "Flash promo sukses diposting."})
+                    chat_memory[sender_id].append({"role": "assistant", "content": "Flash promo sukses diposting oleh Promotion Agent."})
                     
-                elif func_name == "request_content_draft":
+                elif func_name == "ask_content_agent_for_draft":
                     topik = args.get("topik", "Trading Education")
-                    await event.reply(f"⏳ *Memerintahkan Content Agent membuat draf untuk topik: {topik}...*")
+                    await event.reply(f"⏳ *Meminta Content Agent untuk menyusun draf tentang: {topik}...*")
                     
-                    # Panggil fungsi draft dari Content Agent
                     from content_agent import generate_content_draft
                     draft_result = generate_content_draft(topik)
                     
-                    # Tambahkan hasil draf ke memory agar AI Leader bisa membacanya
-                    chat_memory[sender_id].append({"role": "assistant", "content": f"Draf selesai. Tunjukkan ini pada bos dan tanyakan apakah dia setuju untuk diposting:\n\n{draft_result}"})
+                    chat_memory[sender_id].append({"role": "assistant", "content": f"Draf selesai dari Content Agent:\n\n{draft_result}\n\nTanyakan Bos apakah draf ini disetujui untuk dipublish."})
+                    await event.reply(f"📄 **DRAF DARI CONTENT AGENT**\n\n{draft_result}\n\n====================\n*Bos, draf dari Content Agent sudah siap. Apakah Anda setuju untuk dipublish ke channel? (Balas 'Setuju' jika ya)*")
                     
-                    # Balas ke bos
-                    await event.reply(f"📄 **DRAF DARI CONTENT AGENT**\n\n{draft_result}\n\n====================\n*Bos, apakah draf ini sudah oke untuk dipublish? (Ketik setuju jika iya)*")
+                elif func_name == "ask_content_agent_for_news":
+                    await event.reply(f"🔍 *Mendelegasikan ke Content Agent untuk menarik data market & berita terbaru...*")
+                    from content_agent import fetch_forexlive_news, fetch_live_gold_price
+                    harga = fetch_live_gold_price()
+                    news = fetch_forexlive_news()
+                    
+                    hasil = f"[LAPORAN DARI CONTENT AGENT]\nHarga XAUUSD Saat ini: {harga}\n"
+                    if news:
+                        news_text = "\n- ".join(news)
+                        hasil += f"Berita Terbaru:\n- {news_text}"
+                    else:
+                        hasil += "Tidak ada berita berdampak tinggi dari feed."
+                    
+                    chat_memory[sender_id].append({"role": "assistant", "content": hasil})
+                    
+                    # Berikan laporan hasil dari agen ke bos dengan gaya bahasa natural leader
+                    second_response = generate_chat_with_tools(chat_memory[sender_id])
+                    final_text = second_response.content
+                    chat_memory[sender_id].append({"role": "assistant", "content": final_text})
+                    await event.reply(final_text)
                     
                 elif func_name == "post_content_now":
                     teks_konten = args.get("content_text", "")
-                    await event.reply(f"✅ *Mem-publish konten ke Publik Channel...*")
+                    await event.reply(f"✅ *Memerintahkan sistem untuk mem-publish draf ke Publik Channel...*")
                     
                     if MAIN_CLIENT:
                         from content_agent import post_content_draft
-                        # Kita gunakan 'Ad-hoc' sebagai tipe konten
-                        success = await post_content_draft(MAIN_CLIENT, teks_konten, "Ad-hoc Posting by Leader")
+                        success = await post_content_draft(MAIN_CLIENT, teks_konten, "Ad-hoc Posting")
                         if success:
                             await event.reply("✅ Konten sukses mengudara!")
                             chat_memory[sender_id].append({"role": "assistant", "content": "Konten berhasil dipublish."})

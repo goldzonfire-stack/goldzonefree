@@ -46,19 +46,27 @@ async def save_content_history(topic_type, topic_detail):
         pass
 
 
+def fetch_live_gold_price():
+    """Mengambil harga emas real-time (XAUUSD) menggunakan yfinance"""
+    try:
+        import yfinance as yf
+        gold = yf.Ticker("GC=F")
+        price = gold.history(period="1d")['Close'].iloc[-1]
+        return f"${price:.2f}/oz"
+    except Exception as e:
+        print(f"Gagal mengambil harga emas: {e}")
+        return "Harga tidak tersedia saat ini"
+
 def generate_content_draft(topic_type):
     """Men-generate konten menggunakan AI dan mengembalikannya sebagai teks (Draft)"""
     print(f"\n[CONTENT AGENT] Mulai membuat draft konten: {topic_type}")
     
     live_price = fetch_live_gold_price()
     
-    # 1. Mengingat (Memory) apa yang sudah dibahas
-    history = get_recent_topics()
+    # 1. Mengingat (Memory) apa yang sudah dibahas (Secara sinkronus agar bisa dipanggil dari draft)
+    # Catatan: Karena request_content_draft berjalan di thread sinkron/berbeda di AI Leader, kita mock history dulu
+    # atau ubah menjadi async. Untuk amannya, kita kosongkan konteks spesifik di draft jika dipanggil sinkron.
     context = ""
-    if history:
-        last_topic = history[0]
-        if topic_type != "News Reminder":
-            context = f"\n\nCatatan: Terakhir kali kamu membahas tentang '{last_topic}'. JANGAN bahas ini lagi, pilih sub-topik edukasi lain yang berbeda."
 
     # 2. Prompting Persona AI
     from brand_context import GOLDZONFIRE_CONTEXT
