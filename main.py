@@ -6,6 +6,7 @@ from telethon.sessions import StringSession
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from content_agent import setup_content_agent
 
 try:
     from dotenv import load_dotenv
@@ -186,6 +187,10 @@ async def handler(event):
 async def startup_event():
     print("Menjalankan Telegram Client...")
     await client.start()
+    
+    # Menjalankan Content Agent (Scheduler)
+    setup_content_agent(client)
+    
     asyncio.create_task(client.run_until_disconnected())
 
 if __name__ == "__main__":
