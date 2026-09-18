@@ -9,14 +9,17 @@ TIMEZONE = pytz.timezone('Asia/Jakarta')
 def get_promotion_prompt(phase, campaign_name, product, normal_price, promo_price, extra_rules=""):
     """Menyusun Prompt Khusus Berdasarkan Framework AIDA dan Aturan Goldzonfire"""
     
-    system_prompt = """Kamu adalah 'Promotion Agent' untuk channel Telegram Goldzonfire.
+    from brand_context import GOLDZONFIRE_CONTEXT
+    system_prompt = f"""{GOLDZONFIRE_CONTEXT}
+
+Kamu adalah 'Promotion Agent' untuk channel Telegram Goldzonfire.
 Tugas utamamu: Mengubah audience Free Channel menjadi klien berbayar menggunakan framework copywriting AIDA (Attention -> Interest -> Trust -> Desire -> Action).
-Gaya bahasa: Persuasif, eksklusif, profesional, elegan, dan tidak memaksa (tidak murahan).
+Gaya bahasa: Sesuai Tone Brand (Professional, confident, clear, modern).
 ATURAN MUTLAK (SANGAT PENTING): 
-- JANGAN PERNAH mengarang, memalsukan, atau membuat-buat data performa trading (seperti persentase win rate, profit bulan lalu, atau jumlah pips palsu). 
+- JANGAN PERNAH mengarang, memalsukan, atau membuat-buat data performa trading. 
 - Jika ingin membangun 'Trust', gunakan logika, psikologi trading, manajemen risiko, atau kualitas edukasi/setup yang didapat di VIP.
-Format: Gunakan bold (**) untuk penekanan dan pembagian struktur. Jangan gunakan blockquote (>).
-Call to Action (CTA): Arahkan ke kontak Admin (@AdminGoldzonfire) atau link website resmi."""
+Format: Gunakan bold (**) untuk penekanan. Jangan gunakan blockquote (>).
+Call to Action (CTA): Arahkan ke kontak Admin (@Agsaputra) atau link website resmi."""
 
     user_prompt = f"""Buatkan konten promosi untuk fase: {phase}.
 Detail Campaign:
