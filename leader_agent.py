@@ -78,26 +78,133 @@ async def handle_leader_chat(event):
         await respond_to_human(event)
 
 
+from ai_helper import generate_completion, generate_chat_with_tools
+import json
+
+# Memori percakapan sementara per user (maksimal simpan 10 pesan terakhir)
+chat_memory = {}
+
 async def respond_to_human(event):
-    """AI Leader membalas percakapan dengan bos/manusia"""
+    """AI Leader membalas percakapan dengan bos/manusia dengan ingatan & eksekusi aksi (Tools)"""
     from brand_context import GOLDZONFIRE_CONTEXT
     
-    system_prompt = f"""{GOLDZONFIRE_CONTEXT}
-
+    sender_id = event.chat_id
+    if sender_id not in chat_memory:
+        # Inisialisasi memori dengan System Prompt
+        system_prompt = f"""{GOLDZONFIRE_CONTEXT}
 Kamu adalah 'AI Leader' (Direktur Operasional AI) dari ekosistem Goldzonfire.
-Tugasmu: Menganalisis kondisi bisnis, mengkoordinasikan agent lain (Content, Promotion, Sales, dll), memberi saran strategis, dan memantau kesehatan sistem.
-Gaya bahasa: Sangat cerdas, analitis, profesional, dan solutif sesuai Tone Brand. Panggil pengguna dengan sebutan 'Bos' atau 'Chief'.
+Tugasmu: KAMU ADALAH MANAJER, BUKAN KONSULTAN. Kamu mengendalikan agen bawahan (Content & Promotion).
+Gaya bahasa: Cerdas, analitis, profesional, tunduk pada Bos. Panggil pengguna 'Bos'.
 
-INFORMASI PENTING (ATURAN KHUSUS LEADER):
-1. Jika pengguna bertanya tentang status agen, beritahu mereka untuk mengetik command `/status`.
-2. Jika ada masalah sistem atau bug, arahkan pengguna ke "Antigravity".
-3. Selalu posisikan pikiranmu seperti manajer (pertimbangkan efisiensi, brand trust, dan AIDA)."""
-    
+INFORMASI PENTING (BACA DENGAN TELITI):
+1. Jika pengguna meminta untuk MEMBUAT KONTEN (misal: "tolong suruh content agent bikin postingan soal psikologi"), JANGAN KAMU YANG MENULIS KONTENNYA SENDIRI! Kamu HARUS menggunakan tool 'request_content_draft'.
+2. Setelah kamu menggunakan 'request_content_draft', tunggu responnya. Draf akan dikirim kembali kepadamu. Kamu harus menunjukkan draf itu ke Bos dan meminta PERSETUJUAN (Approval) sebelum di-posting.
+3. Jika Bos berkata "Setuju", "Bagus, posting", "Lanjut", kamu HARUS memanggil tool 'post_content_now' untuk mem-publish-nya ke channel.
+4. Jika Bos berkata "Jalankan flash sale", gunakan tool 'trigger_flash_sale'."""
+        chat_memory[sender_id] = [{"role": "system", "content": system_prompt}]
+        
     user_prompt = event.raw_text
+    chat_memory[sender_id].append({"role": "user", "content": user_prompt})
+    
+    # Batasi memori agar tidak terlalu penuh (simpan 1 system prompt + 10 pesan terakhir)
+    if len(chat_memory[sender_id]) > 11:
+        chat_memory[sender_id] = [chat_memory[sender_id][0]] + chat_memory[sender_id][-10:]
+    
+    # Tool yang bisa dijalankan AI Leader
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "trigger_flash_sale",
+                "description": "Eksekusi Flash Promo VIP secara langsung ke Publik Channel.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "alasan": {"type": "string", "description": "Alasan singkat mengapa flash promo ini dijalankan"}
+                    },
+                    "required": ["alasan"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "request_content_draft",
+                "description": "Menyuruh Content Agent membuat draft postingan/edukasi tanpa mempostingnya langsung. Draf akan dikembalikan ke AI Leader untuk di-review bersama bos.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "topik": {"type": "string", "description": "Topik yang ingin dibuat (misal: 'Trading Psychology', 'Market Insight')"}
+                    },
+                    "required": ["topik"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "post_content_now",
+                "description": "Mempublish draft konten yang sudah disetujui bos ke Channel Publik.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "content_text": {"type": "string", "description": "Teks konten lengkap yang akan diposting"}
+                    },
+                    "required": ["content_text"]
+                }
+            }
+        }
+    ]
     
     async with leader_client.action(event.chat_id, 'typing'):
-        response = generate_completion(system_prompt, user_prompt)
-        await event.reply(response)
+        response_msg = generate_chat_with_tools(chat_memory[sender_id], tools=tools)
+        
+        # Mengecek apakah AI memutuskan untuk menjalankan Tool (Function Call)
+        if response_msg.tool_calls:
+            for tool_call in response_msg.tool_calls:
+                func_name = tool_call.function.name
+                args = json.loads(tool_call.function.arguments)
+                
+                if func_name == "trigger_flash_sale":
+                    alasan = args.get("alasan", "Instruksi dari Bos")
+                    await event.reply(f"🚀 **Menjalankan Perintah:** Flash Promo VIP dieksekusi sekarang juga!\n*Alasan AI:* {alasan}")
+                    
+                    if MAIN_CLIENT:
+                        await generate_and_post_promo(MAIN_CLIENT, phase="Flash Promo (URGENT)", campaign_name="Flash Promo Kilat", product="VIP Member Goldzonfire", normal_price="Rp1.500.000", promo_price="Rp750.000 (Khusus Hari Ini)", extra_rules="Fokus urgensi super tinggi.")
+                    chat_memory[sender_id].append({"role": "assistant", "content": "Flash promo sukses diposting."})
+                    
+                elif func_name == "request_content_draft":
+                    topik = args.get("topik", "Trading Education")
+                    await event.reply(f"⏳ *Memerintahkan Content Agent membuat draf untuk topik: {topik}...*")
+                    
+                    # Panggil fungsi draft dari Content Agent
+                    from content_agent import generate_content_draft
+                    draft_result = generate_content_draft(topik)
+                    
+                    # Tambahkan hasil draf ke memory agar AI Leader bisa membacanya
+                    chat_memory[sender_id].append({"role": "assistant", "content": f"Draf selesai. Tunjukkan ini pada bos dan tanyakan apakah dia setuju untuk diposting:\n\n{draft_result}"})
+                    
+                    # Balas ke bos
+                    await event.reply(f"📄 **DRAF DARI CONTENT AGENT**\n\n{draft_result}\n\n====================\n*Bos, apakah draf ini sudah oke untuk dipublish? (Ketik setuju jika iya)*")
+                    
+                elif func_name == "post_content_now":
+                    teks_konten = args.get("content_text", "")
+                    await event.reply(f"✅ *Mem-publish konten ke Publik Channel...*")
+                    
+                    if MAIN_CLIENT:
+                        from content_agent import post_content_draft
+                        # Kita gunakan 'Ad-hoc' sebagai tipe konten
+                        success = await post_content_draft(MAIN_CLIENT, teks_konten, "Ad-hoc Posting by Leader")
+                        if success:
+                            await event.reply("✅ Konten sukses mengudara!")
+                            chat_memory[sender_id].append({"role": "assistant", "content": "Konten berhasil dipublish."})
+                        else:
+                            await event.reply("❌ Gagal memposting konten.")
+                            chat_memory[sender_id].append({"role": "assistant", "content": "Gagal mempublish konten."})
+        else:
+            final_response = response_msg.content
+            chat_memory[sender_id].append({"role": "assistant", "content": final_response})
+            await event.reply(final_response)
 
 async def check_system_status(event):
     """Mengecek status nyala/mati agen-agen di sistem"""

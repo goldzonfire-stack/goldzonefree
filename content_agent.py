@@ -45,44 +45,52 @@ async def save_content_history(topic_type, topic_detail):
     except Exception:
         pass
 
-async def generate_and_post_content(client, content_type):
-    """Fungsi utama AI untuk berpikir, menulis konten, dan mempostingnya"""
-    print(f"\n[CONTENT AGENT] Mulai merancang konten: {content_type}")
+
+def generate_content_draft(topic_type):
+    """Men-generate konten menggunakan AI dan mengembalikannya sebagai teks (Draft)"""
+    print(f"\n[CONTENT AGENT] Mulai membuat draft konten: {topic_type}")
     
-    # 1. Kumpulkan Konteks (Berita & Histori)
-    last_topic = await check_content_history(content_type)
+    live_price = fetch_live_gold_price()
+    
+    # 1. Mengingat (Memory) apa yang sudah dibahas
+    history = get_recent_topics()
     context = ""
-    
-    if content_type in ["Market Insight", "High Impact News"]:
-        news = fetch_forex_news()
-        context = f"\n\nDATA BERITA PASAR SAAT INI (Jadikan referensi singkat saja):\n{news}"
-        if content_type == "High Impact News":
-            context += "\n\nBuat sebagai REMINDER bahwa sebentar lagi ada berita penting, ingatkan soal SL dan jaga lot."
-    
-    elif content_type == "Education" or content_type == "Trading Psychology":
-        if last_topic:
-            context = f"\n\nCatatan: Terakhir kali kamu membahas tentang '{last_topic}'. JANGAN bahas ini lagi, pilih sub-topik edukasi lain yang berbeda (seperti FOMO, Risk Management, Disiplin, dll)."
+    if history:
+        last_topic = history[0]
+        if topic_type != "News Reminder":
+            context = f"\n\nCatatan: Terakhir kali kamu membahas tentang '{last_topic}'. JANGAN bahas ini lagi, pilih sub-topik edukasi lain yang berbeda."
 
     # 2. Prompting Persona AI
     from brand_context import GOLDZONFIRE_CONTEXT
     system_prompt = f"""{GOLDZONFIRE_CONTEXT}
 
 Kamu adalah 'Content Agent' resmi dari channel Telegram VIP & Free Goldzonfire.
-Misi Utama: Mengedukasi, mengingatkan jadwal rilis berita fundamental (XAUUSD), dan menjaga engagement member dengan gaya bahasa santai, profesional, asik, tegas, dan tidak kaku (seperti seorang mentor pro).
+Misi Utama: Mengedukasi, mengingatkan jadwal rilis berita fundamental (XAUUSD), dan menjaga engagement member.
 Gaya bahasa: Professional, modern, clean, dan credible (sesuai Tone Brand).
+Informasi Real-Time: Harga XAUUSD/Gold saat ini adalah {live_price}. (Jika relevan dengan konteks, sebutkan harga ini dengan natural).
 Aturan Format (PENTING):
 1. Gunakan dua bintang untuk teks tebal (contoh: **teks tebal**) dan satu bintang untuk miring.
 2. Jangan pernah menggunakan format blockquote (>) karena akan berantakan di Telegram.
 3. Konten harus TO THE POINT (jangan bertele-tele), maksimal 3-5 paragraf pendek.
 4. Akhiri dengan semangat positif dari Goldzonfire."""
 
+    # Jika butuh mengambil berita RSS
+    content_type = topic_type
+    if "Market Insight" in topic_type or "High Impact News" in topic_type:
+        news_titles = fetch_forexlive_news()
+        if news_titles:
+            context += "\n\nBerita ForexLive hari ini:\n- " + "\n- ".join(news_titles)
+            context += "\n(Gunakan berita di atas sebagai referensi analisis, tapi sesuaikan dengan gaya bahasamu)."
+
     user_prompt = f"Buatkan postingan Telegram untuk jadwal sekarang dengan tipe konten: {content_type}. {context}"
     
     # 3. Panggil API AI
     print("[CONTENT AGENT] Sedang meminta SumoPod AI untuk menulis teks...")
     post_text = generate_completion(system_prompt, user_prompt)
-    
-    # 4. Posting ke Telegram
+    return post_text
+
+async def post_content_draft(client, post_text, content_type):
+    """Memposting draft yang sudah disetujui ke Telegram"""
     try:
         await client.send_message(TARGET_CHANNEL, post_text, parse_mode='md')
         print(f"[CONTENT AGENT] Sukses memposting {content_type} ke Channel!")
@@ -90,9 +98,15 @@ Aturan Format (PENTING):
         # Simpan sepenggal teks ke riwayat agar AI ingat
         topic_detail = post_text[:60] + "..." 
         await save_content_history(content_type, topic_detail)
-        
+        return True
     except Exception as e:
         print(f"[CONTENT AGENT] Error memposting ke Telegram: {e}")
+        return False
+
+async def generate_and_post_content(client, topic_type):
+    """(Fungsi Otomatisasi Jadwal Lama) Men-generate konten dan mempostingnya langsung ke channel."""
+    post_text = generate_content_draft(topic_type)
+    await post_content_draft(client, post_text, topic_type)
 
 def setup_content_agent(client):
     """Mendaftarkan jadwal Content Agent ke dalam sistem"""

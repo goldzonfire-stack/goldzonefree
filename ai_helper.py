@@ -17,7 +17,7 @@ ai_client = OpenAI(
 )
 
 def generate_completion(system_prompt: str, user_message: str, model="gpt-4o", temperature=0.7) -> str:
-    """Fungsi helper dasar untuk memanggil AI."""
+    """Fungsi helper dasar untuk memanggil AI (tanpa memori/tools). Tetap dipertahankan untuk backward compatibility."""
     response = ai_client.chat.completions.create(
         model=model,
         messages=[
@@ -28,3 +28,22 @@ def generate_completion(system_prompt: str, user_message: str, model="gpt-4o", t
         temperature=temperature
     )
     return response.choices[0].message.content
+
+
+def generate_chat_with_tools(messages, tools=None, model="gpt-4o", temperature=0.7):
+    """
+    Fungsi helper tingkat lanjut untuk memanggil AI dengan dukungan histori (memory)
+    dan Function Calling (Tools) agar AI bisa menjalankan fungsi Python sungguhan.
+    """
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 1500,
+        "temperature": temperature
+    }
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+        
+    response = ai_client.chat.completions.create(**kwargs)
+    return response.choices[0].message

@@ -180,6 +180,25 @@ async def handler(event):
         msg_obj = None
         
         try:
+            # Simpan data sinyal ke database (Memory untuk Analytics Agent nanti)
+            try:
+                from database import supabase
+                from datetime import datetime
+                import pytz
+                tz = pytz.timezone('Asia/Jakarta')
+                supabase.table('trading_signals').insert({
+                    'pair': signal_data['pair'],
+                    'action': signal_data['action'],
+                    'entry_price': signal_data['entry'],
+                    'stop_loss': signal_data['sl'],
+                    'take_profit': signal_data['tp'],
+                    'risk_reward': signal_data['rr'],
+                    'status': 'Running',
+                    'created_at': datetime.now(tz).isoformat()
+                }).execute()
+            except Exception as db_err:
+                print(f"Warning: Gagal menyimpan sinyal ke DB (tabel trading_signals mungkin belum ada): {db_err}")
+
             if IMAGE_METHOD == 'URL':
                 msg_obj = await client.send_file(TARGET_CHANNEL, file=IMAGE_URL, caption=formatted_message)
             elif IMAGE_METHOD == 'LOCAL' and os.path.exists(IMAGE_PATH):
