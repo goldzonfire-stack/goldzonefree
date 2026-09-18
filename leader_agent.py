@@ -42,13 +42,23 @@ async def start_leader_client():
     print("✅ AI Leader Bot berhasil aktif!")
 
 
-# ==========================================
-# 1. PERCAKAPAN & KOORDINASI (INTERAKTIF)
-# ==========================================
+ALLOWED_USERS = ['agsaputra', 'agsaputrame']
 
-@leader_client.on(events.NewMessage(chats=[COORDINATION_CHANNEL]))
+@leader_client.on(events.NewMessage())
 async def handle_leader_chat(event):
+    sender = await event.get_sender()
+    sender_username = getattr(sender, 'username', '') or ''
+    
+    # Hanya izinkan akses dari username yang diperbolehkan
+    if sender_username.lower() not in ALLOWED_USERS:
+        return
+
+    # Hanya izinkan akses di DM atau di Channel Koordinasi
+    if not (event.is_private or event.chat_id == COORDINATION_CHANNEL):
+        return
+
     text = event.raw_text
+    print(f"[DEBUG AI LEADER] Pesan diterima dari @{sender_username}: {text}")
     
     # Cek jika bos me-reply pesan Bot ini (untuk ngobrol langsung dengan AI Leader)
     if event.is_reply:
@@ -81,27 +91,31 @@ INFORMASI PENTING (ATURAN):
     
     user_prompt = event.raw_text
     
-    async with leader_client.action(COORDINATION_CHANNEL, 'typing'):
+    async with leader_client.action(event.chat_id, 'typing'):
         response = generate_completion(system_prompt, user_prompt)
         await event.reply(response)
 
 async def check_system_status(event):
     """Mengecek status nyala/mati agen-agen di sistem"""
-    import main # Mengambil state dari main.py
-    
-    is_active = main.IS_SYSTEM_ACTIVE
-    status_text = "🟢 **ONLINE**" if is_active else "🔴 **OFFLINE**"
-    
-    msg = (
-        f"🖥 **GOLDZONFIRE SYSTEM STATUS**\n\n"
-        f"**1. Core System (Forwarder)**: {status_text}\n"
-        f"**2. Content Agent**: 🟢 Aktif (Jadwal berjalan otomatis)\n"
-        f"**3. Promotion Agent**: 🟢 Aktif (Jadwal berjalan otomatis)\n"
-        f"**4. AI Leader**: 🟢 Siaga di Private Channel\n"
-        f"**5. Supabase Database**: 🟢 Terkoneksi\n\n"
-        f"*(Ketik `/report` untuk melihat jumlah aktivitas hari ini)*"
-    )
-    await event.reply(msg)
+    try:
+        import main # Mengambil state dari main.py
+        
+        is_active = getattr(main, 'IS_SYSTEM_ACTIVE', True)
+        status_text = "🟢 **ONLINE**" if is_active else "🔴 **OFFLINE**"
+        
+        msg = (
+            f"🖥 **GOLDZONFIRE SYSTEM STATUS**\n\n"
+            f"**1. Core System (Forwarder)**: {status_text}\n"
+            f"**2. Content Agent**: 🟢 Aktif (Jadwal berjalan otomatis)\n"
+            f"**3. Promotion Agent**: 🟢 Aktif (Jadwal berjalan otomatis)\n"
+            f"**4. AI Leader**: 🟢 Siaga di Private Channel\n"
+            f"**5. Supabase Database**: 🟢 Terkoneksi\n\n"
+            f"*(Ketik `/report` untuk melihat jumlah aktivitas hari ini)*"
+        )
+        await event.reply(msg)
+    except Exception as e:
+        print(f"[DEBUG AI LEADER] Error di check_system_status: {e}")
+        await event.reply(f"⚠️ Error mengambil status: {str(e)}")
 
 
 # ==========================================
