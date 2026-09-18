@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from content_agent import setup_content_agent
 from promotion_agent import setup_promotion_agent, manual_trigger_campaign
+from leader_agent import setup_leader_agent, start_leader_client, leader_client
 
 try:
     from dotenv import load_dotenv
@@ -205,11 +206,16 @@ async def startup_event():
     print("Menjalankan Telegram Client...")
     await client.start()
     
+    # Menjalankan AI Leader Bot
+    await start_leader_client()
+    
     # Menjalankan Agent (Scheduler)
     setup_content_agent(client)
     setup_promotion_agent(client)
+    setup_leader_agent(client)
     
     asyncio.create_task(client.run_until_disconnected())
+    asyncio.create_task(leader_client.run_until_disconnected())
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
