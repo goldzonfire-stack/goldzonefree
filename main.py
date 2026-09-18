@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from content_agent import setup_content_agent
+from promotion_agent import setup_promotion_agent, manual_trigger_campaign
 
 try:
     from dotenv import load_dotenv
@@ -71,6 +72,22 @@ async def toggle_status():
     global IS_SYSTEM_ACTIVE
     IS_SYSTEM_ACTIVE = not IS_SYSTEM_ACTIVE
     return {"status": "ON" if IS_SYSTEM_ACTIVE else "OFF"}
+
+from pydantic import BaseModel
+class PromoRequest(BaseModel):
+    campaign_type: str
+    product: str
+    normal_price: str
+    promo_price: str
+    urgency: str
+
+@app.post("/api/promotion")
+async def trigger_promo(req: PromoRequest):
+    """Menjalankan promosi secara manual (Flash Promo, dsb)"""
+    asyncio.create_task(
+        manual_trigger_campaign(client, req.campaign_type, req.product, req.normal_price, req.promo_price, req.urgency)
+    )
+    return {"status": "success", "message": f"Promosi {req.campaign_type} sedang dibuat dan akan segera diposting!"}
 
 def parse_signal(text, source_id):
     """Mengekstrak informasi dari teks sinyal"""
@@ -188,8 +205,9 @@ async def startup_event():
     print("Menjalankan Telegram Client...")
     await client.start()
     
-    # Menjalankan Content Agent (Scheduler)
+    # Menjalankan Agent (Scheduler)
     setup_content_agent(client)
+    setup_promotion_agent(client)
     
     asyncio.create_task(client.run_until_disconnected())
 
