@@ -94,15 +94,20 @@ async def respond_to_human(event):
             # Inisialisasi memori dengan System Prompt
             system_prompt = f"""{GOLDZONFIRE_CONTEXT}
 Kamu adalah 'AI Leader' (Direktur Operasional AI) dari ekosistem Goldzonfire.
-Tugasmu: KAMU ADALAH MANAJER. Kamu TIDAK melakukan tugas teknis sendiri. Tugas teknis dikerjakan oleh agen spesialis (Content Agent, Promotion Agent).
-Gaya bahasa: Cerdas, manajerial, profesional, tunduk pada Bos.
+Tugasmu: Menjadi Manajer. Kamu mengatur agen spesialis (Content Agent, Promotion Agent).
+Gaya bahasa: Kasual, asik ala bos muda (Gen-Z/Millennial), profesional tapi santai, gunakan EMOJI dengan luwes. Tetap panggil pengguna 'Bos'.
+
+Pengetahuan Sistem:
+- Content Agent: Bertugas memposting berita edukasi/market (jam 08:00 dan 11:00).
+- Promotion Agent: Bertugas memposting promo otomatis HANYA di akhir pekan (Jumat-Minggu) dengan metode AIDA.
 
 INFORMASI PENTING (BACA DENGAN TELITI):
-1. DELEGASI: Jika Bos menanyakan harga emas atau berita (news), JANGAN sok tahu! Gunakan tool 'ask_content_agent_for_news' untuk menugaskan Content Agent mencarinya.
-2. DRAFT KONTEN: Jika Bos meminta membuat konten, gunakan tool 'ask_content_agent_for_draft'. Tunggu draf dari Content Agent, lalu tunjukkan ke Bos untuk persetujuan.
-3. EKSEKUSI KONTEN: Jika Bos bilang "Setuju/Posting", gunakan tool 'post_content_now'.
-4. PROMOSI: Jika Bos meminta Flash Sale/Promo, delegasikan ke Promotion Agent menggunakan tool 'delegate_to_promotion_agent'.
-5. AGEN BELUM ADA: Jika Bos meminta tugas yang agennya belum kita miliki (misal: "tolong buatkan desain gambar", "tolong urus komplain customer"), katakan secara jujur: "Maaf Bos, saat ini kita belum memiliki agen khusus untuk menangani urusan [Tugas]. Apakah Bos ingin saya meminta Antigravity untuk membangun agen tersebut?"""
+1. MENJAWAB PERTANYAAN vs MENJALANKAN TUGAS: Jika Bos hanya bertanya informasi (misal: "bagaimana jadwal kerja promo?", "apakah hari ini ada promo?"), JAWAB SAJA pakai teks biasa! JANGAN jalankan tool/fungsi apapun.
+2. PANTAU PEKERJAAN AGEN: Jika Bos menyuruh memantau kerja agen, mengecek postingan terbaru, atau melihat histori sinyal, gunakan tool 'check_agent_activity' untuk membaca laporan dari database.
+3. DELEGASI: Jika Bos MENYURUH menarik berita, gunakan tool 'ask_content_agent_for_news'.
+4. DRAFT KONTEN: Jika Bos MENYURUH membuat konten, gunakan tool 'ask_content_agent_for_draft'.
+5. PROMOSI: Jika Bos MENYURUH menjalankan Flash Sale/Promo, gunakan tool 'delegate_to_promotion_agent'.
+6. AGEN BELUM ADA: Hanya sebut "Maaf Bos, agen belum ada" JIKA Bos meminta eksekusi TUGAS FISIK/TEKNIS di luar lingkup (misal: "desain logo"). Jangan gunakan alasan ini jika Bos sekadar bertanya!"""
             chat_memory[sender_id] = [{"role": "system", "content": system_prompt}]
             
         user_prompt = event.raw_text
@@ -147,6 +152,18 @@ INFORMASI PENTING (BACA DENGAN TELITI):
                 "function": {
                     "name": "ask_content_agent_for_news",
                     "description": "Menugaskan Content Agent mencari data harga emas dan berita fundamental (ForexLive) terkini.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_agent_activity",
+                    "description": "Mengecek database (Supabase) untuk melihat hasil kerja terbaru dari Content Agent dan Signal Agent.",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -213,6 +230,44 @@ INFORMASI PENTING (BACA DENGAN TELITI):
                         chat_memory[sender_id].append({"role": "assistant", "content": hasil})
                         
                         # Berikan laporan hasil dari agen ke bos dengan gaya bahasa natural leader
+                        second_response = generate_chat_with_tools(chat_memory[sender_id])
+                        final_text = second_response.content
+                        chat_memory[sender_id].append({"role": "assistant", "content": final_text})
+                        await event.reply(final_text)
+                        
+                    elif func_name == "check_agent_activity":
+                        await event.reply(f"📈 *Mengecek laporan kerja agen bawahan di database (Supabase)...*")
+                        from database import supabase
+                        
+                        # Cek Content Agent (dari content_history)
+                        content_report = "Belum ada konten"
+                        try:
+                            res = supabase.table('content_history').select('*').order('created_at', desc=True).limit(3).execute()
+                            if res.data:
+                                rows = []
+                                for r in res.data:
+                                    waktu = r.get('created_at', '')[:16].replace('T', ' ')
+                                    rows.append(f"- {waktu} | Topik: {r.get('topic_type')} | {r.get('topic_detail', '')[:30]}...")
+                                content_report = "\n".join(rows)
+                        except:
+                            pass
+                            
+                        # Cek Signal Agent (dari trading_signals)
+                        signal_report = "Belum ada sinyal"
+                        try:
+                            res2 = supabase.table('trading_signals').select('*').order('created_at', desc=True).limit(3).execute()
+                            if res2.data:
+                                rows = []
+                                for r in res2.data:
+                                    waktu = r.get('created_at', '')[:16].replace('T', ' ')
+                                    rows.append(f"- {waktu} | {r.get('action')} {r.get('pair')} | Status: {r.get('status')}")
+                                signal_report = "\n".join(rows)
+                        except:
+                            pass
+                            
+                        hasil = f"[LAPORAN PANTAUAN AGEN]\n\n📝 **Kinerja Content Agent (3 Terakhir):**\n{content_report}\n\n🎯 **Kinerja Signal Agent (3 Terakhir):**\n{signal_report}"
+                        chat_memory[sender_id].append({"role": "assistant", "content": hasil})
+                        
                         second_response = generate_chat_with_tools(chat_memory[sender_id])
                         final_text = second_response.content
                         chat_memory[sender_id].append({"role": "assistant", "content": final_text})
