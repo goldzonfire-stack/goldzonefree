@@ -17,11 +17,11 @@ def fetch_forex_news():
         feed = feedparser.parse(feed_url)
         news_items = []
         for entry in feed.entries[:3]: # Ambil 3 berita teratas
-            news_items.append(f"- {entry.title}")
-        return "\n".join(news_items)
+            news_items.append(entry.title)
+        return news_items
     except Exception as e:
         print(f"Gagal mengambil RSS: {e}")
-        return "Tidak ada berita fundamental terbaru yang signifikan saat ini."
+        return ["Tidak ada berita fundamental terbaru yang signifikan saat ini."]
 
 async def check_content_history(topic_type):
     """Cek di database topik apa yang baru saja diposting agar tidak mengulang"""
@@ -85,7 +85,7 @@ Aturan Format (PENTING):
     # Jika butuh mengambil berita RSS
     content_type = topic_type
     if "Market Insight" in topic_type or "High Impact News" in topic_type:
-        news_titles = fetch_forexlive_news()
+        news_titles = fetch_forex_news()
         if news_titles:
             context += "\n\nBerita ForexLive hari ini:\n- " + "\n- ".join(news_titles)
             context += "\n(Gunakan berita di atas sebagai referensi analisis, tapi sesuaikan dengan gaya bahasamu)."
